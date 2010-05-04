@@ -62,5 +62,5 @@ letter = either [between 'a' 'z', between 'A' 'Z', oneOf "-_"]
 
 word = oneOrMore letter
 
-arithOp = oneOf "+-*/"
+arithOp = oneOf "+-*/%"
 
