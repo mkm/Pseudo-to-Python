@@ -13,6 +13,9 @@ compileLine input = case parse sourceLine input of
     Left err -> err
     Right (indent, str) -> indent ++ stmtToSource str
 
+alternateWith _ [] = []
+alternateWith seperator xs = foldr1 (\x y -> x ++ seperator ++ y) xs
+
 data Error
     = UnknownError
     | EitherError Error Error
@@ -61,23 +64,25 @@ seperatedBy p q = do
     tail <- zeroOrMore (q >> p)
     return $ head : tail
 
+token p = ws >> p
+
 either = foldr (<|>) failure
 
 expect = satisfies . (==)
 
-match w = sequence $ map expect w
+match w = token $ sequence $ map expect w
 
 between l h = satisfies (\x -> l <= x && x <= h)
 
 letter = either [between 'a' 'z', between 'A' 'Z', oneOf "-_"]
 
-word = oneOrMore letter
+word = token $ oneOrMore letter
 
 digit = between '0' '9'
 
-number = oneOrMore digit
+number = token $ oneOrMore digit
 
-arithOp = oneOf "+-*/%"
+arithOp = token $ oneOf "+-*/%"
 
 white = oneOf " \n\t"
 
@@ -99,21 +104,25 @@ data Statement
 data Expression
     = Variable String
     | Constant String
-    | Plus Expression Expression
-    | Minus Expression Expression
-    | Times Expression Expression
-    | Divide Expression Expression
+    | Times [Expression]
+    | Divide [Expression]
+    | Plus [Expression]
+    | Minus [Expression]
     deriving Show
 
-stmtToSource (ForLoop a b c) = "for " ++ exprToSource a ++ " in range(" ++ exprToSource b ++ ", (" ++ exprToSource c ++ ") - 1):"
+stmtToSource (ForLoop a b c) = "for " ++ exprToSource a ++ " in range(" ++ exprToSource b ++ ", (" ++ exprToSource c ++ ") + 1):"
 stmtToSource (WhileLoop a) = "while " ++ exprToSource a ++ ":"
-stmtToSource (FunctionDecl name params) = "def " ++ name ++ "(" ++ foldr1 (\x y -> x ++ ", " ++ y) params ++ "):"
+stmtToSource (FunctionDecl name params) = "def " ++ name ++ "(" ++ alternateWith ", " params ++ "):"
 stmtToSource (Assignment to from) = exprToSource to ++ " = " ++ exprToSource from
 stmtToSource (ReturnStmt a) = "return " ++ exprToSource a
 stmtToSource EmptyStmt = ""
 
 exprToSource (Variable name) = name
 exprToSource (Constant value) = value
+exprToSource (Times exprs) = alternateWith " * " (map exprToSource exprs)
+exprToSource (Divide exprs) = alternateWith " / " (map exprToSource exprs)
+exprToSource (Plus exprs) = alternateWith " + " (map exprToSource exprs)
+exprToSource (Minus exprs) = alternateWith " - " (map exprToSource exprs)
 
 sourceLine = do
     indent <- ws
@@ -123,32 +132,30 @@ sourceLine = do
 
 statement = either [forLoop, whileLoop, functionDecl, assignment, returnStmt]
 
-expression = either [variable, constant{-, plus, minus, times, divide-}]
+expression = times
+
+primitiveExpression = either [variable, constant]
+
+times = return Times `ap` (divide `seperatedBy` match "*")
+divide = return Divide `ap` (plus `seperatedBy` match "/")
+plus = return Plus `ap` (minus `seperatedBy` match "+")
+minus = return Minus `ap` (primitiveExpression `seperatedBy` match "-")
 
 forLoop = do
-    ws
     match "for"
-    ws
     loopVar <- variable
-    ws
     match "="
-    ws
     initExpr <- expression
-    ws
     match "to"
-    ws
     termExpr <- expression
     return $ ForLoop loopVar initExpr termExpr
 
 whileLoop = do
-    ws
     match "while"
-    ws
     termExpr <- expression
     return $ WhileLoop termExpr
 
 functionDecl = do
-    ws
     name <- word
     match "("
     params <- (word `seperatedBy` match ", ") <|> return []
@@ -156,18 +163,13 @@ functionDecl = do
     return $ FunctionDecl name params
 
 assignment = do
-    ws
     var <- variable
-    ws
     match "="
-    ws
     expr <- expression
     return $ Assignment var expr
 
 returnStmt = do
-    ws
     match "return"
-    ws
     expr <- expression
     return $ ReturnStmt expr
 
