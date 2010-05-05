@@ -95,6 +95,10 @@ endOfSource = notFollowedBy anything
 data Statement
     = ForLoop Expression Expression Expression
     | WhileLoop Expression
+    | If Expression
+    | Else
+    | ElseIf Expression
+    | FunctionCall [Expression]
     | FunctionDecl String [String]
     | Assignment Expression Expression
     | ReturnStmt Expression
@@ -112,6 +116,9 @@ data Expression
 
 stmtToSource (ForLoop a b c) = "for " ++ exprToSource a ++ " in range(" ++ exprToSource b ++ ", (" ++ exprToSource c ++ ") + 1):"
 stmtToSource (WhileLoop a) = "while " ++ exprToSource a ++ ":"
+stmtToSource (If a) = "if " ++ exprToSource a ++ ":"
+stmtToSource Else = "else:"
+stmtToSource (ElseIf a) = "elif " ++ exprToSource a ++ ":"
 stmtToSource (FunctionDecl name params) = "def " ++ name ++ "(" ++ alternateWith ", " params ++ "):"
 stmtToSource (Assignment to from) = exprToSource to ++ " = " ++ exprToSource from
 stmtToSource (ReturnStmt a) = "return " ++ exprToSource a
@@ -120,9 +127,11 @@ stmtToSource EmptyStmt = ""
 exprToSource (Variable name) = name
 exprToSource (Constant value) = value
 exprToSource (Times exprs) = alternateWith " * " (map exprToSource exprs)
-exprToSource (Divide exprs) = alternateWith " / " (map exprToSource exprs)
+exprToSource (Divide exprs) = alternateWith " / " (map  exprToSource exprs)
 exprToSource (Plus exprs) = alternateWith " + " (map exprToSource exprs)
 exprToSource (Minus exprs) = alternateWith " - " (map exprToSource exprs)
+
+parenthesise str = "(" ++ str ++ ")"
 
 sourceLine = do
     indent <- ws
