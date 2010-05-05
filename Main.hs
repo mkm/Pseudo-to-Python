@@ -84,6 +84,8 @@ number = token $ oneOrMore digit
 
 arithOp = token $ oneOf "+-*/%"
 
+boolOp = either $ map match ["==", ">=", "<=", "<", ">"]
+
 white = oneOf " \n\t"
 
 ws = zeroOrMore $ white
@@ -108,10 +110,14 @@ data Statement
 data Expression
     = Variable String
     | Constant String
+    | Comparison String Expression Expression
     | Times [Expression]
     | Divide [Expression]
     | Plus [Expression]
     | Minus [Expression]
+    | SubExpression Expression
+    | FunctionInvocation String [Expression]
+    | PropertyLookup Expression String
     deriving Show
 
 stmtToSource (ForLoop a b c) = "for " ++ exprToSource a ++ " in range(" ++ exprToSource b ++ ", (" ++ exprToSource c ++ ") + 1):"
@@ -126,10 +132,14 @@ stmtToSource EmptyStmt = ""
 
 exprToSource (Variable name) = name
 exprToSource (Constant value) = value
+exprToSource (Comparison op a b) = exprToSource a ++ " " ++ op ++ " " ++ exprToSource b
 exprToSource (Times exprs) = alternateWith " * " (map exprToSource exprs)
 exprToSource (Divide exprs) = alternateWith " / " (map  exprToSource exprs)
 exprToSource (Plus exprs) = alternateWith " + " (map exprToSource exprs)
 exprToSource (Minus exprs) = alternateWith " - " (map exprToSource exprs)
+exprToSource (SubExpression a) = parenthesise (exprToSource a)
+exprToSource (FunctionInvocation name params) = name ++ "(" ++ alternateWith ", " (map exprToSource params) ++ ")"
+exprToSource (PropertyLookup a name) = exprToSource a ++ "." ++ name
 
 parenthesise str = "(" ++ str ++ ")"
 
@@ -139,16 +149,43 @@ sourceLine = do
     endOfSource
     return (indent, x)
 
-statement = either [forLoop, whileLoop, functionDecl, assignment, returnStmt]
+statement = either [forLoop, whileLoop, ifStmt, elseStmt, elseifStmt, functionDecl, assignment, returnStmt]
 
-expression = times
+expression = comparison <|> times
 
-primitiveExpression = either [variable, constant]
+primitiveExpression = either [propertyLookup, variable, constant, subExpression]
+
+paramList = (word `seperatedBy` match ", ") <|> return []
+
+comparison = do
+    left <- times
+    op <- boolOp
+    right <- times
+    return $ Comparison op left right
 
 times = return Times `ap` (divide `seperatedBy` match "*")
 divide = return Divide `ap` (plus `seperatedBy` match "/")
 plus = return Plus `ap` (minus `seperatedBy` match "+")
-minus = return Minus `ap` (primitiveExpression `seperatedBy` match "-")
+minus = return Minus `ap` ((functionInvocation <|> primitiveExpression) `seperatedBy` match "-")
+
+functionInvocation = do
+    func <- word
+    match "("
+    params <- (expression `seperatedBy` match ", ") <|> return []
+    match ")"
+    return $ FunctionInvocation func params
+
+propertyLookup = do
+    var <- variable
+    match "."
+    propName <- word
+    return $ PropertyLookup var propName
+
+subExpression = do
+    match "("
+    expr <- expression
+    match ")"
+    return $ SubExpression expr
 
 forLoop = do
     match "for"
@@ -164,10 +201,24 @@ whileLoop = do
     termExpr <- expression
     return $ WhileLoop termExpr
 
+ifStmt = do
+    match "if"
+    expr <- expression
+    return $ If expr
+
+elseStmt = do
+    match "else"
+    return Else
+
+elseifStmt = do
+    match "elseif"
+    expr <- expression
+    return $ ElseIf expr
+
 functionDecl = do
     name <- word
     match "("
-    params <- (word `seperatedBy` match ", ") <|> return []
+    params <- paramList
     match ")"
     return $ FunctionDecl name params
 
