@@ -84,7 +84,7 @@ number = token $ oneOrMore digit
 
 arithOp = token $ oneOf "+-*/%"
 
-boolOp = either $ map match ["==", ">=", "<=", "<", ">"]
+boolOp = either $ map match ["==", ">=", "<=", "<", ">", "and", "or"]
 
 white = oneOf " \n\t"
 
@@ -118,6 +118,7 @@ data Expression
     | SubExpression Expression
     | FunctionInvocation String [Expression]
     | PropertyLookup Expression String
+    | IndexLookup Expression Expression
     deriving Show
 
 stmtToSource (ForLoop a b c) = "for " ++ exprToSource a ++ " in range(" ++ exprToSource b ++ ", (" ++ exprToSource c ++ ") + 1):"
@@ -140,6 +141,7 @@ exprToSource (Minus exprs) = alternateWith " - " (map exprToSource exprs)
 exprToSource (SubExpression a) = parenthesise (exprToSource a)
 exprToSource (FunctionInvocation name params) = name ++ "(" ++ alternateWith ", " (map exprToSource params) ++ ")"
 exprToSource (PropertyLookup a name) = exprToSource a ++ "." ++ name
+exprToSource (IndexLookup a b) = exprToSource a ++ "[(" ++ exprToSource b ++ ") - 1]"
 
 parenthesise str = "(" ++ str ++ ")"
 
@@ -153,7 +155,7 @@ statement = either [forLoop, whileLoop, ifStmt, elseStmt, elseifStmt, functionDe
 
 expression = comparison <|> times
 
-primitiveExpression = either [propertyLookup, variable, constant, subExpression]
+primitiveExpression = either [propertyLookup, indexLookup, variable, constant, subExpression]
 
 paramList = (word `seperatedBy` match ", ") <|> return []
 
@@ -180,6 +182,13 @@ propertyLookup = do
     match "."
     propName <- word
     return $ PropertyLookup var propName
+
+indexLookup = do
+    var <- variable
+    match "["
+    expr <- expression
+    match "]"
+    return $ IndexLookup var expr
 
 subExpression = do
     match "("
@@ -223,7 +232,7 @@ functionDecl = do
     return $ FunctionDecl name params
 
 assignment = do
-    var <- variable
+    var <- expression
     match "="
     expr <- expression
     return $ Assignment var expr
